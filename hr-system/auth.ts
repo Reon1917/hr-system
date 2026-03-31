@@ -1,7 +1,7 @@
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { nextCookies } from "better-auth/next-js";
-import * as schema from "./db/schema";
+import * as schema from "./db/schema/auth";
 import { db } from "./lib/db";
 
 const baseURL =
@@ -10,6 +10,22 @@ const baseURL =
 export const auth = betterAuth({
   baseURL,
   secret: process.env.BETTER_AUTH_SECRET,
+  user: {
+    additionalFields: {
+      role: {
+        type: ["admin", "employee"],
+        required: false,
+        defaultValue: "admin",
+        input: false,
+      },
+      isActive: {
+        type: "boolean",
+        required: false,
+        defaultValue: true,
+        input: false,
+      },
+    },
+  },
   database: drizzleAdapter(db, {
     provider: "pg",
     schema,
