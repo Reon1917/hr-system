@@ -124,8 +124,8 @@ export const payrollAdjustmentType = pgEnum("payroll_adjustment_type", [
 export const companySettings = pgTable("company_settings", {
   id: text("id").primaryKey().default("main"),
   businessName: text("business_name").notNull(),
-  timezone: text("timezone").notNull().default("UTC"),
-  currencyCode: text("currency_code").notNull().default("USD"),
+  timezone: text("timezone").notNull().default("Asia/Bangkok"),
+  currencyCode: text("currency_code").notNull().default("THB"),
   weekStartsOn: integer("week_starts_on").notNull().default(1),
   ...auditColumns(),
 });
