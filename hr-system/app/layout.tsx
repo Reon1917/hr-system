@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono, Inter } from "next/font/google";
 import "./globals.css";
+import { LocalhostReset } from "@/components/dev/localhost-reset";
 import { cn } from "@/lib/utils";
 
 const inter = Inter({subsets:['latin'],variable:'--font-sans'});
@@ -16,8 +17,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "HR System",
-  description: "HR starter with Better Auth, Drizzle, and Neon",
+  title: "Small Business Staff Manager",
+  description: "Simple staff tracking for attendance, holidays, and payroll.",
+  manifest: "/manifest.json",
 };
 
 export default function RootLayout({
@@ -30,7 +32,10 @@ export default function RootLayout({
       lang="en"
       className={cn("h-full", "antialiased", geistSans.variable, geistMono.variable, "font-sans", inter.variable)}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col">
+        <LocalhostReset />
+        {children}
+      </body>
     </html>
   );
 }

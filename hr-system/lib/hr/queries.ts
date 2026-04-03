@@ -1,41 +1,43 @@
 import {
   and,
+  asc,
   count,
   desc,
   eq,
+  gte,
   ilike,
   inArray,
+  ne,
   or,
   type SQL,
 } from "drizzle-orm";
 import {
   attendanceEntry,
   companySettings,
-  department,
   employee,
   employeeCompensationHistory,
-  leaveRequest,
-  leaveType,
+  holiday,
+  overtimeEntry,
   payrollPeriod,
+  payrollResult,
   payrollRun,
 } from "@/db/schema/hr";
 import { db } from "@/lib/db";
 import {
+  buildCurrentCompensationMap,
+  type CompensationRecord,
+} from "@/lib/hr/payroll";
+import {
   attendanceStatusOptions,
   employeeStatusOptions,
+  formatEnumLabel,
+  fromDbAttendanceStatus,
   isOneOf,
-  leaveRequestStatusOptions,
-  payrollFrequencyOptions,
-  payrollPeriodStatusOptions,
+  normalizeEmployeeStatus,
 } from "@/lib/hr/options";
-import {
-  companyLocalePresets,
-  getCompanyLocalePresetByValues,
-} from "@/lib/hr/settings";
 
 type EmployeesFilters = {
   query?: string;
-  departmentId?: string;
   status?: string;
 };
 
@@ -45,48 +47,47 @@ type AttendanceFilters = {
   workDate?: string;
 };
 
-type LeaveFilters = {
-  employeeId?: string;
-  leaveTypeId?: string;
-  status?: string;
-};
-
-type PayrollFilters = {
-  status?: string;
-  frequency?: string;
-};
-
 function normalizeFilter(value?: string) {
   const trimmed = value?.trim();
   return trimmed ? trimmed : undefined;
 }
 
-function buildCurrentCompensationMap(
-  history: Array<{
+function getLeaveUsageMap(
+  entries: Array<{
     employeeId: string;
-    payType: "hourly" | "monthly";
-    hourlyRate: string | null;
-    monthlySalary: string | null;
-    effectiveFrom: string;
+    status: string;
   }>,
 ) {
-  const currentCompensationByEmployee = new Map<string, (typeof history)[number]>();
+  const usageByEmployee = new Map<
+    string,
+    { paidLeaveUsed: number; sickLeaveUsed: number }
+  >();
 
-  for (const row of history) {
-    if (!currentCompensationByEmployee.has(row.employeeId)) {
-      currentCompensationByEmployee.set(row.employeeId, row);
+  for (const entry of entries) {
+    const usage = usageByEmployee.get(entry.employeeId) ?? {
+      paidLeaveUsed: 0,
+      sickLeaveUsed: 0,
+    };
+
+    if (entry.status === "paid_leave") {
+      usage.paidLeaveUsed += 1;
     }
+
+    if (entry.status === "sick_leave") {
+      usage.sickLeaveUsed += 1;
+    }
+
+    usageByEmployee.set(entry.employeeId, usage);
   }
 
-  return currentCompensationByEmployee;
+  return usageByEmployee;
 }
 
-export async function getDepartmentOptions() {
-  return db
-    .select({ id: department.id, name: department.name, code: department.code })
-    .from(department)
-    .where(eq(department.isActive, true))
-    .orderBy(department.name);
+function getCurrentCompensationRows(
+  history: CompensationRecord[],
+  endDate?: string,
+) {
+  return buildCurrentCompensationMap(history, endDate);
 }
 
 export async function getEmployeeOptions() {
@@ -97,22 +98,16 @@ export async function getEmployeeOptions() {
     .orderBy(employee.fullName);
 }
 
-export async function getLeaveTypeOptions() {
-  return db
-    .select({ id: leaveType.id, name: leaveType.name, code: leaveType.code })
-    .from(leaveType)
-    .where(eq(leaveType.isActive, true))
-    .orderBy(leaveType.name);
-}
+export async function getOverviewPageData() {
+  const today = new Date().toISOString().slice(0, 10);
+  const monthPrefix = today.slice(0, 7);
 
-export async function getDashboardData() {
-  const [employeeSummary, activeEmployeeSummary, departmentSummary, pendingLeaveSummary, draftPayrollSummary, recentEmployees] =
+  const [employeeSummary, activeEmployeeSummary, attendanceTodaySummary, payrollPeriodSummary, recentEmployees, attendanceEntries, upcomingHolidays, latestPeriod] =
     await Promise.all([
       db.select({ value: count() }).from(employee),
       db.select({ value: count() }).from(employee).where(eq(employee.status, "active")),
-      db.select({ value: count() }).from(department).where(eq(department.isActive, true)),
-      db.select({ value: count() }).from(leaveRequest).where(eq(leaveRequest.status, "pending")),
-      db.select({ value: count() }).from(payrollPeriod).where(eq(payrollPeriod.status, "draft")),
+      db.select({ value: count() }).from(attendanceEntry).where(eq(attendanceEntry.workDate, today)),
+      db.select({ value: count() }).from(payrollPeriod),
       db
         .select({
           id: employee.id,
@@ -121,29 +116,99 @@ export async function getDashboardData() {
           jobTitle: employee.jobTitle,
           status: employee.status,
           createdAt: employee.createdAt,
-          departmentName: department.name,
         })
         .from(employee)
-        .leftJoin(department, eq(employee.departmentId, department.id))
         .orderBy(desc(employee.createdAt))
         .limit(8),
+      db
+        .select({
+          id: attendanceEntry.id,
+          workDate: attendanceEntry.workDate,
+          status: attendanceEntry.status,
+          fullName: employee.fullName,
+          employeeCode: employee.employeeCode,
+        })
+        .from(attendanceEntry)
+        .innerJoin(employee, eq(attendanceEntry.employeeId, employee.id))
+        .orderBy(desc(attendanceEntry.workDate), desc(attendanceEntry.updatedAt))
+        .limit(6),
+      db
+        .select({
+          id: holiday.id,
+          holidayDate: holiday.holidayDate,
+          name: holiday.name,
+        })
+        .from(holiday)
+        .where(gte(holiday.holidayDate, today))
+        .orderBy(asc(holiday.holidayDate))
+        .limit(6),
+      db.query.payrollPeriod.findFirst({
+        columns: {
+          id: true,
+          startDate: true,
+          endDate: true,
+          finalizedAt: true,
+        },
+        orderBy: (fields, operators) => [operators.desc(fields.startDate)],
+      }),
     ]);
+
+  let latestPayroll: {
+    periodLabel: string;
+    totalCost: string;
+    employeeCount: number;
+  } | null = null;
+
+  if (latestPeriod) {
+    const run = await db.query.payrollRun.findFirst({
+      where: eq(payrollRun.payrollPeriodId, latestPeriod.id),
+      columns: { id: true },
+      orderBy: (fields, operators) => [operators.desc(fields.runNumber)],
+    });
+
+    if (run) {
+      const results = await db
+        .select({ netPay: payrollResult.netPay })
+        .from(payrollResult)
+        .where(eq(payrollResult.payrollRunId, run.id));
+
+      const totalCost = results.reduce(
+        (sum, row) => sum + Number(row.netPay ?? "0"),
+        0,
+      );
+
+      latestPayroll = {
+        periodLabel: `${latestPeriod.startDate} to ${latestPeriod.endDate}`,
+        totalCost: totalCost.toFixed(2),
+        employeeCount: results.length,
+      };
+    }
+  }
 
   return {
     summary: {
       totalEmployees: employeeSummary[0]?.value ?? 0,
       activeEmployees: activeEmployeeSummary[0]?.value ?? 0,
-      activeDepartments: departmentSummary[0]?.value ?? 0,
-      pendingLeaveRequests: pendingLeaveSummary[0]?.value ?? 0,
-      draftPayrollPeriods: draftPayrollSummary[0]?.value ?? 0,
+      attendanceToday: attendanceTodaySummary[0]?.value ?? 0,
+      holidaysThisMonth: upcomingHolidays.filter((item) => item.holidayDate.startsWith(monthPrefix))
+        .length,
+      payrollPeriods: payrollPeriodSummary[0]?.value ?? 0,
     },
-    recentEmployees,
+    recentEmployees: recentEmployees.map((item) => ({
+      ...item,
+      status: normalizeEmployeeStatus(item.status),
+    })),
+    attendanceEntries: attendanceEntries.map((item) => ({
+      ...item,
+      statusLabel: formatEnumLabel(fromDbAttendanceStatus(item.status)),
+    })),
+    upcomingHolidays,
+    latestPayroll,
   };
 }
 
 export async function getEmployeesPageData(filters: EmployeesFilters = {}) {
   const query = normalizeFilter(filters.query);
-  const departmentId = normalizeFilter(filters.departmentId);
   const status = normalizeFilter(filters.status);
   const conditions: SQL[] = [];
 
@@ -153,6 +218,7 @@ export async function getEmployeesPageData(filters: EmployeesFilters = {}) {
       ilike(employee.fullName, pattern),
       ilike(employee.employeeCode, pattern),
       ilike(employee.jobTitle, pattern),
+      ilike(employee.phoneNumber, pattern),
     );
 
     if (searchCondition) {
@@ -160,18 +226,15 @@ export async function getEmployeesPageData(filters: EmployeesFilters = {}) {
     }
   }
 
-  if (departmentId) {
-    conditions.push(eq(employee.departmentId, departmentId));
-  }
-
   if (status && isOneOf(employeeStatusOptions, status)) {
-    conditions.push(eq(employee.status, status));
+    conditions.push(
+      status === "active" ? eq(employee.status, "active") : ne(employee.status, "active"),
+    );
   }
 
   const whereClause = conditions.length ? and(...conditions) : undefined;
 
-  const [departments, employees, compensationHistory] = await Promise.all([
-    getDepartmentOptions(),
+  const [employees, compensationHistory, leaveEntries] = await Promise.all([
     db
       .select({
         id: employee.id,
@@ -180,11 +243,11 @@ export async function getEmployeesPageData(filters: EmployeesFilters = {}) {
         status: employee.status,
         hireDate: employee.hireDate,
         jobTitle: employee.jobTitle,
-        departmentId: employee.departmentId,
-        departmentName: department.name,
+        phoneNumber: employee.phoneNumber,
+        paidLeaveQuota: employee.paidLeaveQuota,
+        sickLeaveQuota: employee.sickLeaveQuota,
       })
       .from(employee)
-      .leftJoin(department, eq(employee.departmentId, department.id))
       .where(whereClause)
       .orderBy(desc(employee.createdAt)),
     db
@@ -193,6 +256,10 @@ export async function getEmployeesPageData(filters: EmployeesFilters = {}) {
         payType: employeeCompensationHistory.payType,
         hourlyRate: employeeCompensationHistory.hourlyRate,
         monthlySalary: employeeCompensationHistory.monthlySalary,
+        overtimeEligible: employeeCompensationHistory.overtimeEligible,
+        overtimeRateMode: employeeCompensationHistory.overtimeRateMode,
+        overtimeRate: employeeCompensationHistory.overtimeRate,
+        overtimeMultiplier: employeeCompensationHistory.overtimeMultiplier,
         effectiveFrom: employeeCompensationHistory.effectiveFrom,
       })
       .from(employeeCompensationHistory)
@@ -200,15 +267,27 @@ export async function getEmployeesPageData(filters: EmployeesFilters = {}) {
         desc(employeeCompensationHistory.effectiveFrom),
         desc(employeeCompensationHistory.createdAt),
       ),
+    db
+      .select({
+        employeeId: attendanceEntry.employeeId,
+        status: attendanceEntry.status,
+      })
+      .from(attendanceEntry)
+      .where(inArray(attendanceEntry.status, ["paid_leave", "sick_leave"])),
   ]);
 
-  const currentCompensationByEmployee = buildCurrentCompensationMap(compensationHistory);
+  const currentCompensationByEmployee = getCurrentCompensationRows(compensationHistory);
+  const leaveUsageByEmployee = getLeaveUsageMap(leaveEntries);
 
   return {
-    departments,
     employees: employees.map((item) => ({
       ...item,
+      status: normalizeEmployeeStatus(item.status),
       currentCompensation: currentCompensationByEmployee.get(item.id) ?? null,
+      leaveUsage: leaveUsageByEmployee.get(item.id) ?? {
+        paidLeaveUsed: 0,
+        sickLeaveUsed: 0,
+      },
     })),
   };
 }
@@ -223,25 +302,20 @@ export async function getAttendancePageData(filters: AttendanceFilters = {}) {
     conditions.push(eq(attendanceEntry.employeeId, employeeId));
   }
 
-  if (status && isOneOf(attendanceStatusOptions, status)) {
-    conditions.push(eq(attendanceEntry.status, status));
-  }
-
   if (workDate) {
     conditions.push(eq(attendanceEntry.workDate, workDate));
   }
 
   const whereClause = conditions.length ? and(...conditions) : undefined;
 
-  const [employees, entries] = await Promise.all([
+  const [employees, rawEntries] = await Promise.all([
     getEmployeeOptions(),
     db
       .select({
         id: attendanceEntry.id,
+        employeeId: attendanceEntry.employeeId,
         workDate: attendanceEntry.workDate,
-        shiftLabel: attendanceEntry.shiftLabel,
         status: attendanceEntry.status,
-        approvalStatus: attendanceEntry.approvalStatus,
         actualClockInAt: attendanceEntry.actualClockInAt,
         actualClockOutAt: attendanceEntry.actualClockOutAt,
         breakMinutes: attendanceEntry.breakMinutes,
@@ -252,101 +326,79 @@ export async function getAttendancePageData(filters: AttendanceFilters = {}) {
       .from(attendanceEntry)
       .innerJoin(employee, eq(attendanceEntry.employeeId, employee.id))
       .where(whereClause)
-      .orderBy(desc(attendanceEntry.workDate), desc(attendanceEntry.createdAt))
-      .limit(24),
+      .orderBy(desc(attendanceEntry.workDate), desc(attendanceEntry.updatedAt))
+      .limit(40),
   ]);
+
+  const entryIds = rawEntries.map((item) => item.id);
+  const overtimeRows = entryIds.length
+    ? await db
+        .select({
+          attendanceEntryId: overtimeEntry.attendanceEntryId,
+          approvedMinutes: overtimeEntry.approvedMinutes,
+        })
+        .from(overtimeEntry)
+        .where(inArray(overtimeEntry.attendanceEntryId, entryIds))
+    : [];
+  const overtimeByEntryId = new Map<string, number>();
+
+  for (const row of overtimeRows) {
+    if (!row.attendanceEntryId) {
+      continue;
+    }
+
+    overtimeByEntryId.set(
+      row.attendanceEntryId,
+      (overtimeByEntryId.get(row.attendanceEntryId) ?? 0) + row.approvedMinutes / 60,
+    );
+  }
+
+  const entries = rawEntries
+    .map((item) => ({
+      ...item,
+      uiStatus: fromDbAttendanceStatus(item.status),
+      overtimeHours: overtimeByEntryId.get(item.id) ?? 0,
+    }))
+    .filter((item) => !status || (isOneOf(attendanceStatusOptions, status) && item.uiStatus === status));
 
   return { employees, entries };
 }
 
-export async function getLeavePageData(filters: LeaveFilters = {}) {
-  const employeeId = normalizeFilter(filters.employeeId);
-  const leaveTypeId = normalizeFilter(filters.leaveTypeId);
-  const status = normalizeFilter(filters.status);
-  const conditions: SQL[] = [];
+export async function getHolidayPageData() {
+  const holidays = await db
+    .select({
+      id: holiday.id,
+      holidayDate: holiday.holidayDate,
+      name: holiday.name,
+    })
+    .from(holiday)
+    .orderBy(asc(holiday.holidayDate));
 
-  if (employeeId) {
-    conditions.push(eq(leaveRequest.employeeId, employeeId));
-  }
-
-  if (leaveTypeId) {
-    conditions.push(eq(leaveRequest.leaveTypeId, leaveTypeId));
-  }
-
-  if (status && isOneOf(leaveRequestStatusOptions, status)) {
-    conditions.push(eq(leaveRequest.status, status));
-  }
-
-  const whereClause = conditions.length ? and(...conditions) : undefined;
-
-  const [employees, leaveTypes, requests] = await Promise.all([
-    getEmployeeOptions(),
-    getLeaveTypeOptions(),
-    db
-      .select({
-        id: leaveRequest.id,
-        startDate: leaveRequest.startDate,
-        endDate: leaveRequest.endDate,
-        requestedUnits: leaveRequest.requestedUnits,
-        approvedUnits: leaveRequest.approvedUnits,
-        status: leaveRequest.status,
-        requestedReason: leaveRequest.requestedReason,
-        fullName: employee.fullName,
-        employeeCode: employee.employeeCode,
-        leaveTypeName: leaveType.name,
-        leaveTypeCode: leaveType.code,
-      })
-      .from(leaveRequest)
-      .innerJoin(employee, eq(leaveRequest.employeeId, employee.id))
-      .innerJoin(leaveType, eq(leaveRequest.leaveTypeId, leaveType.id))
-      .where(whereClause)
-      .orderBy(desc(leaveRequest.startDate), desc(leaveRequest.createdAt))
-      .limit(24),
-  ]);
-
-  return { employees, leaveTypes, requests };
+  return { holidays };
 }
 
-export async function getPayrollPageData(filters: PayrollFilters = {}) {
-  const status = normalizeFilter(filters.status);
-  const frequency = normalizeFilter(filters.frequency);
-  const conditions: SQL[] = [];
-
-  if (status && isOneOf(payrollPeriodStatusOptions, status)) {
-    conditions.push(eq(payrollPeriod.status, status));
-  }
-
-  if (frequency && isOneOf(payrollFrequencyOptions, frequency)) {
-    conditions.push(eq(payrollPeriod.frequency, frequency));
-  }
-
-  const whereClause = conditions.length ? and(...conditions) : undefined;
-
+export async function getPayrollPageData() {
   const periods = await db
     .select({
       id: payrollPeriod.id,
       startDate: payrollPeriod.startDate,
       endDate: payrollPeriod.endDate,
-      frequency: payrollPeriod.frequency,
-      status: payrollPeriod.status,
       finalizedAt: payrollPeriod.finalizedAt,
       createdAt: payrollPeriod.createdAt,
     })
     .from(payrollPeriod)
-    .where(whereClause)
     .orderBy(desc(payrollPeriod.startDate), desc(payrollPeriod.createdAt))
-    .limit(24);
+    .limit(12);
 
   const periodIds = periods.map((period) => period.id);
-
   const runs = periodIds.length
     ? await db
         .select({
           id: payrollRun.id,
           payrollPeriodId: payrollRun.payrollPeriodId,
-          runNumber: payrollRun.runNumber,
-          status: payrollRun.status,
+          calculatedAt: payrollRun.calculatedAt,
           createdAt: payrollRun.createdAt,
+          runNumber: payrollRun.runNumber,
         })
         .from(payrollRun)
         .where(inArray(payrollRun.payrollPeriodId, periodIds))
@@ -361,116 +413,108 @@ export async function getPayrollPageData(filters: PayrollFilters = {}) {
     }
   }
 
-  return {
-    periods: periods.map((period) => ({
+  const runIds = Array.from(latestRunByPeriod.values()).map((run) => run.id);
+  const results = runIds.length
+    ? await db
+        .select({
+          id: payrollResult.id,
+          payrollRunId: payrollResult.payrollRunId,
+          netPay: payrollResult.netPay,
+          snapshotJson: payrollResult.snapshotJson,
+          employeeName: employee.fullName,
+          employeeCode: employee.employeeCode,
+        })
+        .from(payrollResult)
+        .innerJoin(employee, eq(payrollResult.employeeId, employee.id))
+        .where(inArray(payrollResult.payrollRunId, runIds))
+        .orderBy(employee.fullName)
+    : [];
+
+  const resultsByRunId = new Map<string, typeof results>();
+
+  for (const result of results) {
+    const runResults = resultsByRunId.get(result.payrollRunId) ?? [];
+    runResults.push(result);
+    resultsByRunId.set(result.payrollRunId, runResults);
+  }
+
+  const mappedPeriods = periods.map((period) => {
+    const run = latestRunByPeriod.get(period.id) ?? null;
+    const runResults = run ? resultsByRunId.get(run.id) ?? [] : [];
+    const totalCost = runResults.reduce(
+      (sum, result) => sum + Number(result.netPay ?? "0"),
+      0,
+    );
+
+    return {
       ...period,
-      latestRun: latestRunByPeriod.get(period.id) ?? null,
-    })),
-  };
-}
+      latestRun: run,
+      employeeCount: runResults.length,
+      totalCost: totalCost.toFixed(2),
+    };
+  });
 
-export async function getDashboardRecentEmployees() {
-  return db
-    .select({
-      id: employee.id,
-      employeeCode: employee.employeeCode,
-      fullName: employee.fullName,
-      jobTitle: employee.jobTitle,
-      status: employee.status,
-      departmentName: department.name,
-    })
-    .from(employee)
-    .leftJoin(department, eq(employee.departmentId, department.id))
-    .orderBy(desc(employee.createdAt))
-    .limit(8);
-}
+  const activePeriod = mappedPeriods[0] ?? null;
+  const activeRunId = activePeriod?.latestRun?.id ?? null;
+  const latestResults = activeRunId
+    ? (resultsByRunId.get(activeRunId) ?? []).map((item) => {
+        const snapshot = item.snapshotJson ?? {};
 
-export async function getAttendanceSnapshot() {
-  return db
-    .select({
-      id: attendanceEntry.id,
-      workDate: attendanceEntry.workDate,
-      status: attendanceEntry.status,
-      fullName: employee.fullName,
-      employeeCode: employee.employeeCode,
-    })
-    .from(attendanceEntry)
-    .innerJoin(employee, eq(attendanceEntry.employeeId, employee.id))
-    .orderBy(desc(attendanceEntry.workDate), desc(attendanceEntry.createdAt))
-    .limit(6);
-}
-
-export async function getPendingLeaveSnapshot() {
-  return db
-    .select({
-      id: leaveRequest.id,
-      startDate: leaveRequest.startDate,
-      endDate: leaveRequest.endDate,
-      fullName: employee.fullName,
-      employeeCode: employee.employeeCode,
-      leaveTypeCode: leaveType.code,
-    })
-    .from(leaveRequest)
-    .innerJoin(employee, eq(leaveRequest.employeeId, employee.id))
-    .innerJoin(leaveType, eq(leaveRequest.leaveTypeId, leaveType.id))
-    .where(eq(leaveRequest.status, "pending"))
-    .orderBy(desc(leaveRequest.startDate), desc(leaveRequest.createdAt))
-    .limit(6);
-}
-
-export async function getDraftPayrollSnapshot() {
-  return db
-    .select({
-      id: payrollPeriod.id,
-      startDate: payrollPeriod.startDate,
-      endDate: payrollPeriod.endDate,
-      frequency: payrollPeriod.frequency,
-      status: payrollPeriod.status,
-    })
-    .from(payrollPeriod)
-    .where(eq(payrollPeriod.status, "draft"))
-    .orderBy(desc(payrollPeriod.startDate), desc(payrollPeriod.createdAt))
-    .limit(6);
-}
-
-export async function getOverviewPageData() {
-  const [dashboard, attendanceEntries, pendingLeaveRequests, draftPayrolls] = await Promise.all([
-    getDashboardData(),
-    getAttendanceSnapshot(),
-    getPendingLeaveSnapshot(),
-    getDraftPayrollSnapshot(),
-  ]);
+        return {
+          id: item.id,
+          employeeName: item.employeeName,
+          employeeCode: item.employeeCode,
+          netPay: item.netPay,
+          workedDays:
+            typeof snapshot.workedDays === "number" ? snapshot.workedDays : 0,
+          leaveDays: typeof snapshot.leaveDays === "number" ? snapshot.leaveDays : 0,
+          overtimeHours:
+            typeof snapshot.overtimeHours === "number" ? snapshot.overtimeHours : 0,
+        };
+      })
+    : [];
 
   return {
-    ...dashboard,
-    attendanceEntries,
-    pendingLeaveRequests,
-    draftPayrolls,
+    periods: mappedPeriods,
+    activePeriod,
+    latestResults,
   };
 }
 
 export async function getSettingsPageData() {
-  const settings = await db.query.companySettings.findFirst({
-    where: eq(companySettings.id, "main"),
-    columns: {
-      id: true,
-      businessName: true,
-      currencyCode: true,
-      timezone: true,
-      weekStartsOn: true,
-      updatedAt: true,
-    },
-  });
+  const [settings, policy] = await Promise.all([
+    db.query.companySettings.findFirst({
+      where: eq(companySettings.id, "main"),
+      columns: {
+        id: true,
+        businessName: true,
+        currencyCode: true,
+        timezone: true,
+        updatedAt: true,
+      },
+    }),
+    db.query.payrollPolicyVersion.findFirst({
+      columns: {
+        id: true,
+        paidLeavePayable: true,
+        sickLeavePayable: true,
+        holidaysPaid: true,
+        overtimeMultiplierDefault: true,
+        defaultWorkMinutesPerDay: true,
+      },
+      orderBy: (fields, operators) => [operators.desc(fields.effectiveFrom)],
+    }),
+  ]);
 
-  if (!settings) {
-    throw new Error("Company settings are not initialized.");
+  if (!settings || !policy) {
+    throw new Error("Business settings are not initialized.");
   }
 
   return {
     settings,
-    presets: companyLocalePresets,
-    activePreset:
-      getCompanyLocalePresetByValues(settings.currencyCode, settings.timezone) ??
-      companyLocalePresets[0],
+    policy: {
+      ...policy,
+      defaultWorkHoursPerDay: policy.defaultWorkMinutesPerDay / 60,
+    },
   };
 }

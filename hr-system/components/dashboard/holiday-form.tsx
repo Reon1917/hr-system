@@ -1,10 +1,10 @@
 "use client";
 
 import { useActionState, useEffect } from "react";
+import { saveHolidayAction, type FormState } from "@/app/dashboard/actions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { createDepartmentAction, type FormState } from "@/app/dashboard/actions";
 import { useModalClose } from "@/components/ui/modal";
 
 const initialFormState: FormState = {
@@ -12,10 +12,10 @@ const initialFormState: FormState = {
   message: "",
 };
 
-export function DepartmentForm() {
+export function HolidayForm() {
   const closeModal = useModalClose();
   const [state, formAction, isPending] = useActionState(
-    createDepartmentAction,
+    saveHolidayAction,
     initialFormState,
   );
 
@@ -28,20 +28,23 @@ export function DepartmentForm() {
   return (
     <form action={formAction} className="space-y-4">
       <div className="space-y-2">
-        <Label htmlFor="department-code">Department code</Label>
-        <Input id="department-code" name="code" placeholder="OPS" required />
+        <Label htmlFor="holiday-name">Holiday name</Label>
+        <Input id="holiday-name" name="name" placeholder="Thingyan holiday" required />
       </div>
+
       <div className="space-y-2">
-        <Label htmlFor="department-name">Department name</Label>
-        <Input id="department-name" name="name" placeholder="Operations" required />
+        <Label htmlFor="holiday-date">Date</Label>
+        <Input id="holiday-date" name="holidayDate" required type="date" />
       </div>
+
       {state.message ? (
         <p className={`text-sm ${state.status === "error" ? "text-red-600" : "text-blue-700"}`}>
           {state.message}
         </p>
       ) : null}
+
       <Button className="w-full" disabled={isPending} type="submit">
-        {isPending ? "Creating..." : "Add department"}
+        {isPending ? "Saving..." : "Save holiday"}
       </Button>
     </form>
   );

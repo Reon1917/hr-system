@@ -11,7 +11,7 @@ const navItems = [
   { href: "/dashboard", label: "Overview" },
   { href: "/dashboard/employees", label: "Employees" },
   { href: "/dashboard/attendance", label: "Attendance" },
-  { href: "/dashboard/leave", label: "Leave" },
+  { href: "/dashboard/holidays", label: "Holidays" },
   { href: "/dashboard/payroll", label: "Payroll" },
   { href: "/dashboard/settings", label: "Settings" },
 ];
@@ -33,11 +33,11 @@ export function AdminShell({ user, children }: AdminShellProps) {
         <div className="flex h-full flex-col">
           <div className="border-b border-border px-6 py-6">
             <p className="text-xs font-semibold uppercase tracking-[0.22em] text-primary">
-              HR system
+              Staff manager
             </p>
             <h1 className="mt-3 text-lg font-semibold tracking-tight">Admin workspace</h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              Structured operations for people, time, leave, and payroll.
+              Simple operations for staff, attendance, holidays, and payroll.
             </p>
           </div>
 

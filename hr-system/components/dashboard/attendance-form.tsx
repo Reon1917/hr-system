@@ -59,7 +59,7 @@ export function AttendanceForm({ employees }: AttendanceFormProps) {
 
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-2">
-          <Label htmlFor="attendance-date">Work date</Label>
+          <Label htmlFor="attendance-date">Date</Label>
           <Input id="attendance-date" name="workDate" required type="date" />
         </div>
         <div className="space-y-2">
@@ -68,7 +68,7 @@ export function AttendanceForm({ employees }: AttendanceFormProps) {
             id="attendance-status"
             name="status"
             className="flex h-10 w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none transition focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/15"
-            defaultValue="present"
+            defaultValue="worked"
           >
             {attendanceStatusOptions.map((item) => (
               <option key={item} value={item}>
@@ -79,18 +79,13 @@ export function AttendanceForm({ employees }: AttendanceFormProps) {
         </div>
       </div>
 
-      <div className="space-y-2">
-        <Label htmlFor="attendance-shift">Shift label</Label>
-        <Input id="attendance-shift" name="shiftLabel" placeholder="Morning shift" />
-      </div>
-
       <div className="grid gap-4 sm:grid-cols-3">
         <div className="space-y-2">
-          <Label htmlFor="clock-in-time">Clock in</Label>
+          <Label htmlFor="clock-in-time">Start time</Label>
           <Input id="clock-in-time" name="clockInTime" type="time" />
         </div>
         <div className="space-y-2">
-          <Label htmlFor="clock-out-time">Clock out</Label>
+          <Label htmlFor="clock-out-time">End time</Label>
           <Input id="clock-out-time" name="clockOutTime" type="time" />
         </div>
         <div className="space-y-2">
@@ -100,8 +95,20 @@ export function AttendanceForm({ employees }: AttendanceFormProps) {
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="attendance-remarks">Remarks</Label>
-        <Textarea id="attendance-remarks" name="remarks" placeholder="Optional note for payroll and attendance review." />
+        <Label htmlFor="overtime-hours">Overtime hours</Label>
+        <Input
+          defaultValue="0"
+          id="overtime-hours"
+          min="0"
+          name="overtimeHours"
+          step="0.25"
+          type="number"
+        />
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="attendance-remarks">Note</Label>
+        <Textarea id="attendance-remarks" name="remarks" placeholder="Optional note for manual corrections or context." />
       </div>
 
       {state.message ? (
@@ -111,7 +118,7 @@ export function AttendanceForm({ employees }: AttendanceFormProps) {
       ) : null}
 
       <Button className="w-full" disabled={isPending} type="submit">
-        {isPending ? "Saving..." : "Record attendance"}
+        {isPending ? "Saving..." : "Save attendance"}
       </Button>
     </form>
   );

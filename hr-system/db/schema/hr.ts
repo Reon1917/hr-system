@@ -160,6 +160,8 @@ export const employee = pgTable(
       onDelete: "set null",
     }),
     jobTitle: text("job_title").notNull(),
+    paidLeaveQuota: quantity("paid_leave_quota").notNull().default("0"),
+    sickLeaveQuota: quantity("sick_leave_quota").notNull().default("0"),
     paymentNotes: text("payment_notes"),
     notes: text("notes"),
     ...auditColumns(),

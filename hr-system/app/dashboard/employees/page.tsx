@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { DepartmentForm } from "@/components/dashboard/department-form";
+import { toggleEmployeeStatusAction } from "@/app/dashboard/actions";
 import { EmployeeForm } from "@/components/dashboard/employee-form";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -18,7 +18,6 @@ export default async function EmployeesPage({ searchParams }: EmployeesPageProps
   const params = await searchParams;
   const filters = {
     query: readSearchParam(params.q) ?? "",
-    departmentId: readSearchParam(params.departmentId) ?? "",
     status: readSearchParam(params.status) ?? "",
   };
   const data = await getEmployeesPageData(filters);
@@ -32,29 +31,19 @@ export default async function EmployeesPage({ searchParams }: EmployeesPageProps
               Employees
             </p>
             <h1 className="mt-2 text-3xl font-semibold tracking-tight">
-              Employee master data
+              Staff records and pay setup
             </h1>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
-              Review employee records first, then open creation actions only when you need them.
+              Keep a simple employee roster with pay settings and leave quotas in one place.
             </p>
           </div>
-          <div className="flex flex-wrap gap-3">
-            <Modal
-              description="Create a new employee record with initial compensation settings and department assignment."
-              title="Register employee"
-              triggerLabel="Add employee"
-            >
-              <EmployeeForm departments={data.departments} />
-            </Modal>
-            <Modal
-              description="Add a department for structure, filtering, and reporting across the employee register."
-              title="Add department"
-              triggerLabel="Add department"
-              triggerVariant="outline"
-            >
-              <DepartmentForm />
-            </Modal>
-          </div>
+          <Modal
+            description="Add a staff member with role, pay type, overtime settings, and leave quotas."
+            title="Add employee"
+            triggerLabel="Add employee"
+          >
+            <EmployeeForm />
+          </Modal>
         </div>
       </section>
 
@@ -64,34 +53,18 @@ export default async function EmployeesPage({ searchParams }: EmployeesPageProps
             Filters
           </p>
           <h2 className="mt-2 text-xl font-semibold tracking-tight">
-            Narrow the employee register
+            Narrow the staff list
           </h2>
         </div>
-        <form className="grid gap-4 px-6 py-6 lg:grid-cols-[1.4fr_1fr_1fr_auto_auto] lg:items-end">
+        <form className="grid gap-4 px-6 py-6 lg:grid-cols-[1.4fr_1fr_auto_auto] lg:items-end">
           <div className="space-y-2">
             <Label htmlFor="employee-filter-q">Search</Label>
             <Input
               defaultValue={filters.query}
               id="employee-filter-q"
               name="q"
-              placeholder="Name, code, or title"
+              placeholder="Name, code, role, or phone"
             />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="employee-filter-department">Department</Label>
-            <select
-              className="flex h-10 w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none transition focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/15"
-              defaultValue={filters.departmentId}
-              id="employee-filter-department"
-              name="departmentId"
-            >
-              <option value="">All departments</option>
-              {data.departments.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.code} · {item.name}
-                </option>
-              ))}
-            </select>
           </div>
           <div className="space-y-2">
             <Label htmlFor="employee-filter-status">Status</Label>
@@ -121,10 +94,10 @@ export default async function EmployeesPage({ searchParams }: EmployeesPageProps
       <section className="rounded-2xl border border-border bg-card shadow-sm">
         <div className="border-b border-border px-6 py-5">
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">
-            Employee register
+            Staff list
           </p>
           <h2 className="mt-2 text-xl font-semibold tracking-tight">
-            Current employee roster
+            Current employees
           </h2>
         </div>
         <div className="overflow-x-auto">
@@ -132,9 +105,10 @@ export default async function EmployeesPage({ searchParams }: EmployeesPageProps
             <thead className="bg-muted/50 text-left text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
               <tr>
                 <th className="px-6 py-3">Employee</th>
-                <th className="px-6 py-3">Department</th>
-                <th className="px-6 py-3">Compensation</th>
+                <th className="px-6 py-3">Pay</th>
+                <th className="px-6 py-3">Leave quota</th>
                 <th className="px-6 py-3">Status</th>
+                <th className="px-6 py-3 text-right">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border bg-white">
@@ -147,10 +121,10 @@ export default async function EmployeesPage({ searchParams }: EmployeesPageProps
                         <p className="text-muted-foreground">
                           {item.employeeCode} · {item.jobTitle}
                         </p>
+                        {item.phoneNumber ? (
+                          <p className="text-xs text-muted-foreground">{item.phoneNumber}</p>
+                        ) : null}
                       </div>
-                    </td>
-                    <td className="px-6 py-4 text-muted-foreground">
-                      {item.departmentName ?? "Unassigned"}
                     </td>
                     <td className="px-6 py-4 text-muted-foreground">
                       {item.currentCompensation
@@ -159,16 +133,33 @@ export default async function EmployeesPage({ searchParams }: EmployeesPageProps
                           : `Monthly · ${item.currentCompensation.monthlySalary}`
                         : "Not set"}
                     </td>
+                    <td className="px-6 py-4 text-muted-foreground">
+                      <div>Paid: {item.leaveUsage.paidLeaveUsed} / {item.paidLeaveQuota}</div>
+                      <div>Sick: {item.leaveUsage.sickLeaveUsed} / {item.sickLeaveQuota}</div>
+                    </td>
                     <td className="px-6 py-4">
                       <Badge variant={item.status === "active" ? "success" : "secondary"}>
                         {formatEnumLabel(item.status)}
                       </Badge>
                     </td>
+                    <td className="px-6 py-4 text-right">
+                      <form
+                        action={toggleEmployeeStatusAction.bind(
+                          null,
+                          item.id,
+                          item.status === "active" ? "inactive" : "active",
+                        )}
+                      >
+                        <Button type="submit" variant="outline">
+                          {item.status === "active" ? "Deactivate" : "Reactivate"}
+                        </Button>
+                      </form>
+                    </td>
                   </tr>
                 ))
               ) : (
                 <tr>
-                  <td className="px-6 py-8 text-muted-foreground" colSpan={4}>
+                  <td className="px-6 py-8 text-muted-foreground" colSpan={5}>
                     No employees matched the current filters.
                   </td>
                 </tr>
@@ -177,7 +168,6 @@ export default async function EmployeesPage({ searchParams }: EmployeesPageProps
           </table>
         </div>
       </section>
-
     </div>
   );
 }

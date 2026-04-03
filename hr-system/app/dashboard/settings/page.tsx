@@ -1,4 +1,4 @@
-import { CompanyLocaleForm } from "@/components/dashboard/company-locale-form";
+import { BusinessSettingsForm } from "@/components/dashboard/business-settings-form";
 import { getSettingsPageData } from "@/lib/hr/queries";
 
 export default async function SettingsPage() {
@@ -11,10 +11,10 @@ export default async function SettingsPage() {
           Settings
         </p>
         <h1 className="mt-2 text-3xl font-semibold tracking-tight">
-          Currency and timezone settings
+          Business and payroll settings
         </h1>
         <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
-          The system supports three preset combinations for company-wide currency and timezone behavior.
+          Keep the company basics and the simple payroll rules in one editable form.
         </p>
       </section>
 
@@ -24,7 +24,7 @@ export default async function SettingsPage() {
             Current settings
           </p>
           <h2 className="mt-2 text-xl font-semibold tracking-tight">
-            Active company locale
+            Active business profile
           </h2>
         </div>
         <div className="grid gap-4 px-6 py-6 md:grid-cols-3">
@@ -52,17 +52,14 @@ export default async function SettingsPage() {
       <section className="rounded-2xl border border-border bg-card shadow-sm">
         <div className="border-b border-border px-6 py-5">
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">
-            Presets
+            Edit settings
           </p>
           <h2 className="mt-2 text-xl font-semibold tracking-tight">
-            Switch supported locale presets
+            Simple business rules
           </h2>
         </div>
         <div className="px-6 py-6">
-          <CompanyLocaleForm
-            activePresetId={data.activePreset.id}
-            presets={data.presets}
-          />
+          <BusinessSettingsForm policy={data.policy} settings={data.settings} />
         </div>
       </section>
     </div>

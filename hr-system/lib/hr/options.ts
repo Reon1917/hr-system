@@ -1,54 +1,67 @@
-export const employeeStatusOptions = [
-  "active",
-  "inactive",
-  "resigned",
-  "terminated",
-] as const;
+export const employeeStatusOptions = ["active", "inactive"] as const;
 
 export const payTypeOptions = ["hourly", "monthly"] as const;
 
 export const attendanceStatusOptions = [
-  "present",
-  "late",
-  "absent",
+  "worked",
   "paid_leave",
-  "unpaid_leave",
   "sick_leave",
-  "holiday_worked",
-  "holiday_off",
-  "rest_day_worked",
-  "rest_day_off",
+  "unpaid_leave",
+  "holiday",
+  "absent",
 ] as const;
 
-export const leaveRequestStatusOptions = [
-  "pending",
-  "approved",
-  "rejected",
-] as const;
+export type UiAttendanceStatus = (typeof attendanceStatusOptions)[number];
 
-export const leavePortionOptions = [
-  "full_day",
-  "half_day_am",
-  "half_day_pm",
-] as const;
+export type DbAttendanceStatus =
+  | "present"
+  | "paid_leave"
+  | "sick_leave"
+  | "unpaid_leave"
+  | "holiday_off"
+  | "absent";
 
-export const payrollFrequencyOptions = [
-  "monthly",
-  "semi_monthly",
-  "weekly",
-] as const;
+const attendanceDbStatusByUiStatus: Record<UiAttendanceStatus, DbAttendanceStatus> = {
+  worked: "present",
+  paid_leave: "paid_leave",
+  sick_leave: "sick_leave",
+  unpaid_leave: "unpaid_leave",
+  holiday: "holiday_off",
+  absent: "absent",
+};
 
-export const payrollPeriodStatusOptions = [
-  "draft",
-  "processing",
-  "finalized",
-] as const;
+const uiAttendanceStatusByDbStatus: Record<string, UiAttendanceStatus> = {
+  present: "worked",
+  late: "worked",
+  absent: "absent",
+  paid_leave: "paid_leave",
+  unpaid_leave: "unpaid_leave",
+  sick_leave: "sick_leave",
+  holiday_worked: "worked",
+  holiday_off: "holiday",
+  rest_day_worked: "worked",
+  rest_day_off: "holiday",
+};
+
+export const payrollFrequencyOptions = ["monthly"] as const;
 
 export function isOneOf<T extends readonly string[]>(
   values: T,
   value: string,
 ): value is T[number] {
   return values.includes(value);
+}
+
+export function toDbAttendanceStatus(value: UiAttendanceStatus): DbAttendanceStatus {
+  return attendanceDbStatusByUiStatus[value];
+}
+
+export function fromDbAttendanceStatus(value: string): UiAttendanceStatus {
+  return uiAttendanceStatusByDbStatus[value] ?? "worked";
+}
+
+export function normalizeEmployeeStatus(value: string) {
+  return value === "active" ? "active" : "inactive";
 }
 
 export function formatEnumLabel(value: string) {

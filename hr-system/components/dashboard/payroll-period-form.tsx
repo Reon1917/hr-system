@@ -1,12 +1,11 @@
 "use client";
 
 import { useActionState, useEffect } from "react";
-import { createPayrollPeriodAction, type FormState } from "@/app/dashboard/actions";
+import { calculatePayrollAction, type FormState } from "@/app/dashboard/actions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useModalClose } from "@/components/ui/modal";
-import { formatEnumLabel, payrollFrequencyOptions } from "@/lib/hr/options";
 
 const initialFormState: FormState = {
   status: "idle",
@@ -16,7 +15,7 @@ const initialFormState: FormState = {
 export function PayrollPeriodForm() {
   const closeModal = useModalClose();
   const [state, formAction, isPending] = useActionState(
-    createPayrollPeriodAction,
+    calculatePayrollAction,
     initialFormState,
   );
 
@@ -39,22 +38,6 @@ export function PayrollPeriodForm() {
         </div>
       </div>
 
-      <div className="space-y-2">
-        <Label htmlFor="payroll-frequency">Payroll frequency</Label>
-        <select
-          id="payroll-frequency"
-          name="frequency"
-          className="flex h-10 w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none transition focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/15"
-          defaultValue="monthly"
-        >
-          {payrollFrequencyOptions.map((item) => (
-            <option key={item} value={item}>
-              {formatEnumLabel(item)}
-            </option>
-          ))}
-        </select>
-      </div>
-
       {state.message ? (
         <p className={`text-sm ${state.status === "error" ? "text-red-600" : "text-blue-700"}`}>
           {state.message}
@@ -62,7 +45,7 @@ export function PayrollPeriodForm() {
       ) : null}
 
       <Button className="w-full" disabled={isPending} type="submit">
-        {isPending ? "Creating..." : "Create draft period"}
+        {isPending ? "Calculating..." : "Calculate payroll"}
       </Button>
     </form>
   );

@@ -5,9 +5,9 @@ import { formatEnumLabel } from "@/lib/hr/options";
 const summaryLabels = [
   { key: "totalEmployees", label: "Employees" },
   { key: "activeEmployees", label: "Active employees" },
-  { key: "activeDepartments", label: "Departments" },
-  { key: "pendingLeaveRequests", label: "Pending leave" },
-  { key: "draftPayrollPeriods", label: "Draft payrolls" },
+  { key: "attendanceToday", label: "Entries today" },
+  { key: "holidaysThisMonth", label: "Holidays this month" },
+  { key: "payrollPeriods", label: "Saved payrolls" },
 ] as const;
 
 export default async function DashboardPage() {
@@ -20,10 +20,10 @@ export default async function DashboardPage() {
           Overview
         </p>
         <h1 className="mt-2 text-3xl font-semibold tracking-tight">
-          Daily HR operations summary
+          Daily staff operations
         </h1>
         <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
-          Monitor employee volume, pending leave, and payroll draft readiness from a single operational view.
+          See today&apos;s attendance activity, the latest payroll run, and upcoming holidays at a glance.
         </p>
       </section>
 
@@ -47,7 +47,7 @@ export default async function DashboardPage() {
               Recent employees
             </p>
             <h2 className="mt-2 text-xl font-semibold tracking-tight">
-              Latest employee records
+              Latest staff records
             </h2>
           </div>
           <Link className="text-sm font-medium text-primary" href="/dashboard/employees">
@@ -60,7 +60,7 @@ export default async function DashboardPage() {
               <tr>
                 <th className="px-6 py-3">Employee</th>
                 <th className="px-6 py-3">Code</th>
-                <th className="px-6 py-3">Department</th>
+                <th className="px-6 py-3">Role</th>
                 <th className="px-6 py-3">Status</th>
               </tr>
             </thead>
@@ -68,15 +68,12 @@ export default async function DashboardPage() {
               {data.recentEmployees.length ? (
                 data.recentEmployees.map((item) => (
                   <tr key={item.id}>
-                    <td className="px-6 py-4">
-                      <div>
-                        <p className="font-medium text-foreground">{item.fullName}</p>
-                        <p className="text-muted-foreground">{item.jobTitle}</p>
-                      </div>
-                    </td>
+                    <td className="px-6 py-4 font-medium text-foreground">{item.fullName}</td>
                     <td className="px-6 py-4 text-muted-foreground">{item.employeeCode}</td>
-                    <td className="px-6 py-4 text-muted-foreground">{item.departmentName ?? "Unassigned"}</td>
-                    <td className="px-6 py-4 text-muted-foreground">{formatEnumLabel(item.status)}</td>
+                    <td className="px-6 py-4 text-muted-foreground">{item.jobTitle}</td>
+                    <td className="px-6 py-4 text-muted-foreground">
+                      {formatEnumLabel(item.status)}
+                    </td>
                   </tr>
                 ))
               ) : (
@@ -91,90 +88,72 @@ export default async function DashboardPage() {
         </div>
       </section>
 
-      <section className="rounded-2xl border border-border bg-card shadow-sm">
-        <div className="border-b border-border px-6 py-5">
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">
-            Operational queue
-          </p>
-          <h2 className="mt-2 text-xl font-semibold tracking-tight">
-            Items that need attention
-          </h2>
-        </div>
-        <div className="grid gap-0 divide-y divide-border lg:grid-cols-3 lg:divide-x lg:divide-y-0">
-          <section className="px-6 py-5">
-            <div className="border-b border-border px-0 py-5 pt-0">
-              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">
-                Pending leave
-              </p>
-            </div>
-            <div className="space-y-3 pt-5">
-              {data.pendingLeaveRequests.length ? (
-                data.pendingLeaveRequests.map((item) => (
-                  <div key={item.id} className="rounded-lg border border-border bg-white px-4 py-3">
-                    <p className="font-medium text-foreground">{item.fullName}</p>
-                    <p className="text-sm text-muted-foreground">
-                      {item.employeeCode} · {item.leaveTypeCode}
-                    </p>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                      {item.startDate} to {item.endDate}
-                    </p>
-                  </div>
-                ))
-              ) : (
-                <p className="text-sm text-muted-foreground">No pending leave requests.</p>
-              )}
-            </div>
-          </section>
+      <section className="grid gap-6 xl:grid-cols-3">
+        <section className="rounded-2xl border border-border bg-card shadow-sm">
+          <div className="border-b border-border px-6 py-5">
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">
+              Recent attendance
+            </p>
+          </div>
+          <div className="space-y-3 px-6 py-5">
+            {data.attendanceEntries.length ? (
+              data.attendanceEntries.map((item) => (
+                <div key={item.id} className="rounded-lg border border-border bg-white px-4 py-3">
+                  <p className="font-medium text-foreground">{item.fullName}</p>
+                  <p className="text-sm text-muted-foreground">
+                    {item.employeeCode} · {item.workDate}
+                  </p>
+                  <p className="mt-1 text-sm text-muted-foreground">{item.statusLabel}</p>
+                </div>
+              ))
+            ) : (
+              <p className="text-sm text-muted-foreground">No attendance entries yet.</p>
+            )}
+          </div>
+        </section>
 
-          <section className="px-6 py-5">
-            <div className="border-b border-border px-0 py-5 pt-0">
-              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">
-                Draft payrolls
-              </p>
-            </div>
-            <div className="space-y-3 pt-5">
-              {data.draftPayrolls.length ? (
-                data.draftPayrolls.map((item) => (
-                  <div key={item.id} className="rounded-lg border border-border bg-white px-4 py-3">
-                    <p className="font-medium text-foreground">
-                      {item.startDate} to {item.endDate}
-                    </p>
-                    <p className="text-sm text-muted-foreground">
-                      {formatEnumLabel(item.frequency)} · {formatEnumLabel(item.status)}
-                    </p>
-                  </div>
-                ))
-              ) : (
-                <p className="text-sm text-muted-foreground">No draft payroll periods.</p>
-              )}
-            </div>
-          </section>
+        <section className="rounded-2xl border border-border bg-card shadow-sm">
+          <div className="border-b border-border px-6 py-5">
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">
+              Upcoming holidays
+            </p>
+          </div>
+          <div className="space-y-3 px-6 py-5">
+            {data.upcomingHolidays.length ? (
+              data.upcomingHolidays.map((item) => (
+                <div key={item.id} className="rounded-lg border border-border bg-white px-4 py-3">
+                  <p className="font-medium text-foreground">{item.name}</p>
+                  <p className="text-sm text-muted-foreground">{item.holidayDate}</p>
+                </div>
+              ))
+            ) : (
+              <p className="text-sm text-muted-foreground">No upcoming holidays saved.</p>
+            )}
+          </div>
+        </section>
 
-          <section className="px-6 py-5">
-            <div className="border-b border-border px-0 py-5 pt-0">
-              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">
-                Recent attendance
-              </p>
-            </div>
-            <div className="space-y-3 pt-5">
-              {data.attendanceEntries.length ? (
-                data.attendanceEntries.map((item) => (
-                  <div key={item.id} className="rounded-lg border border-border bg-white px-4 py-3">
-                    <p className="font-medium text-foreground">{item.fullName}</p>
-                    <p className="text-sm text-muted-foreground">
-                      {item.employeeCode} · {item.workDate}
-                    </p>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                      {formatEnumLabel(item.status)}
-                    </p>
-                  </div>
-                ))
-              ) : (
-                <p className="text-sm text-muted-foreground">No attendance entries yet.</p>
-              )}
-            </div>
-          </section>
-        </div>
+        <section className="rounded-2xl border border-border bg-card shadow-sm">
+          <div className="border-b border-border px-6 py-5">
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">
+              Latest payroll
+            </p>
+          </div>
+          <div className="px-6 py-5">
+            {data.latestPayroll ? (
+              <div className="rounded-lg border border-border bg-white px-4 py-4">
+                <p className="font-medium text-foreground">{data.latestPayroll.periodLabel}</p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {data.latestPayroll.employeeCount} employees
+                </p>
+                <p className="mt-3 text-2xl font-semibold tracking-tight text-foreground">
+                  {data.latestPayroll.totalCost}
+                </p>
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">No payroll has been calculated yet.</p>
+            )}
+          </div>
+        </section>
       </section>
     </div>
   );
