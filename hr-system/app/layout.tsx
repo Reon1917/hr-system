@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono, Inter } from "next/font/google";
 import "./globals.css";
 import { LocalhostReset } from "@/components/dev/localhost-reset";
+import { ToastProvider } from "@/components/ui/toaster";
 import { cn } from "@/lib/utils";
 
 const inter = Inter({subsets:['latin'],variable:'--font-sans'});
@@ -33,8 +34,10 @@ export default function RootLayout({
       className={cn("h-full", "antialiased", geistSans.variable, geistMono.variable, "font-sans", inter.variable)}
     >
       <body className="min-h-full flex flex-col">
-        <LocalhostReset />
-        {children}
+        <ToastProvider>
+          <LocalhostReset />
+          {children}
+        </ToastProvider>
       </body>
     </html>
   );

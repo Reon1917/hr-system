@@ -4,6 +4,7 @@ import { useActionState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { saveAttendanceRosterAction, type FormState } from "@/app/dashboard/actions";
 import { Button } from "@/components/ui/button";
+import { useToast } from "@/components/ui/toaster";
 import { attendanceStatusOptions, formatEnumLabel } from "@/lib/hr/options";
 
 const initialFormState: FormState = {
@@ -33,6 +34,7 @@ type AttendanceRosterFormProps = {
 
 export function AttendanceRosterForm({ rosterDate, rows }: AttendanceRosterFormProps) {
   const router = useRouter();
+  const { pushToast } = useToast();
   const [state, formAction, isPending] = useActionState(
     saveAttendanceRosterAction,
     initialFormState,
@@ -40,9 +42,16 @@ export function AttendanceRosterForm({ rosterDate, rows }: AttendanceRosterFormP
 
   useEffect(() => {
     if (state.status === "success") {
+      if (state.message) {
+        pushToast(state.message, "success");
+      }
       router.refresh();
     }
-  }, [router, state.status]);
+
+    if (state.status === "error" && state.message) {
+      pushToast(state.message, "error");
+    }
+  }, [pushToast, router, state.message, state.status]);
 
   return (
     <form action={formAction} className="space-y-5">
