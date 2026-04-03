@@ -37,7 +37,7 @@ export const employeeStatus = pgEnum("employee_status", [
   "resigned",
   "terminated",
 ]);
-export const payType = pgEnum("pay_type", ["hourly", "monthly"]);
+export const payType = pgEnum("pay_type", ["daily", "monthly"]);
 export const overtimeRateMode = pgEnum("overtime_rate_mode", [
   "multiplier",
   "flat_rate",
@@ -160,6 +160,12 @@ export const employee = pgTable(
       onDelete: "set null",
     }),
     jobTitle: text("job_title").notNull(),
+    defaultShiftLabel: text("default_shift_label").notNull().default("Day shift"),
+    defaultShiftStartTime: time("default_shift_start_time").notNull().default("09:00"),
+    defaultShiftEndTime: time("default_shift_end_time").notNull().default("18:00"),
+    defaultShiftBreakMinutes: integer("default_shift_break_minutes")
+      .notNull()
+      .default(60),
     paidLeaveQuota: quantity("paid_leave_quota").notNull().default("0"),
     sickLeaveQuota: quantity("sick_leave_quota").notNull().default("0"),
     paymentNotes: text("payment_notes"),

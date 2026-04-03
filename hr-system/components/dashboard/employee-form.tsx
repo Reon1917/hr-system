@@ -60,17 +60,62 @@ export function EmployeeForm() {
             id="pay-type"
             name="payType"
             className="flex h-10 w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none transition focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/15"
-            defaultValue="hourly"
+            defaultValue="daily"
           >
-            <option value="hourly">Hourly</option>
+            <option value="daily">Daily</option>
             <option value="monthly">Monthly</option>
           </select>
         </div>
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="rate">Hourly rate / monthly salary</Label>
+        <Label htmlFor="rate">Daily rate / monthly salary</Label>
         <Input id="rate" min="0" name="rate" placeholder="25.00" required step="0.01" type="number" />
+      </div>
+
+      <div className="rounded-xl border border-border bg-muted/30 p-4">
+        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">
+          Default shift
+        </p>
+        <p className="mt-2 text-sm leading-6 text-muted-foreground">
+          This shift is reused during attendance logging so the admin only changes exceptions.
+        </p>
+
+        <div className="mt-4 grid gap-4 sm:grid-cols-2">
+          <div className="space-y-2">
+            <Label htmlFor="default-shift-label">Shift name</Label>
+            <Input
+              defaultValue="Day shift"
+              id="default-shift-label"
+              name="defaultShiftLabel"
+              placeholder="Morning cashier"
+              required
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="default-shift-break">Break minutes</Label>
+            <Input
+              defaultValue="60"
+              id="default-shift-break"
+              min="0"
+              name="defaultShiftBreakMinutes"
+              required
+              step="1"
+              type="number"
+            />
+          </div>
+        </div>
+
+        <div className="mt-4 grid gap-4 sm:grid-cols-2">
+          <div className="space-y-2">
+            <Label htmlFor="default-shift-start">Start time</Label>
+            <Input defaultValue="09:00" id="default-shift-start" name="defaultShiftStartTime" required type="time" />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="default-shift-end">End time</Label>
+            <Input defaultValue="18:00" id="default-shift-end" name="defaultShiftEndTime" required type="time" />
+          </div>
+        </div>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
@@ -105,7 +150,7 @@ export function EmployeeForm() {
 
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-2">
-          <Label htmlFor="overtime-rate">Overtime hourly rate</Label>
+          <Label htmlFor="overtime-rate">Overtime rate</Label>
           <Input
             id="overtime-rate"
             min="0"

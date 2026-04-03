@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
-import { and, desc, eq, gte, lte } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, lte } from "drizzle-orm";
 import { auth } from "@/auth";
 import { requireAdminSession } from "@/lib/auth/session";
 import {
@@ -23,6 +23,7 @@ import {
   buildCurrentCompensationMap,
   getInclusiveDayCount,
   getOverlapDayCount,
+  getShiftHours,
   getWorkedHours,
   summarizeAttendanceStatuses,
 } from "@/lib/hr/payroll";
@@ -55,7 +56,22 @@ function toDateTime(workDate: string, timeValue: string | null) {
     return null;
   }
 
-  return new Date(`${workDate}T${timeValue}:00`);
+  const normalizedTime = String(timeValue).trim();
+  const parts = normalizedTime.split(":");
+
+  if (parts.length < 2 || parts.length > 3) {
+    return null;
+  }
+
+  const [hours, minutes, seconds = "00"] = parts;
+  const normalizedHours = hours.padStart(2, "0");
+  const normalizedMinutes = minutes.padStart(2, "0");
+  const normalizedSeconds = seconds.padStart(2, "0");
+  const dateTime = new Date(
+    `${workDate}T${normalizedHours}:${normalizedMinutes}:${normalizedSeconds}`,
+  );
+
+  return Number.isNaN(dateTime.getTime()) ? null : dateTime;
 }
 
 function toPositiveMoneyString(value: string) {
@@ -110,12 +126,43 @@ export async function createEmployeeAction(
   const overtimeEligible = formData.get("overtimeEligible") === "on";
   const overtimeRateValue = String(formData.get("overtimeRate") ?? "").trim();
   const overtimeMultiplierValue = String(formData.get("overtimeMultiplier") ?? "").trim();
+  const defaultShiftLabel = String(formData.get("defaultShiftLabel") ?? "").trim();
+  const defaultShiftStartTime = String(formData.get("defaultShiftStartTime") ?? "").trim();
+  const defaultShiftEndTime = String(formData.get("defaultShiftEndTime") ?? "").trim();
+  const defaultShiftBreakMinutesValue = String(
+    formData.get("defaultShiftBreakMinutes") ?? "60",
+  ).trim();
   const paidLeaveQuotaValue = String(formData.get("paidLeaveQuota") ?? "0").trim();
   const sickLeaveQuotaValue = String(formData.get("sickLeaveQuota") ?? "0").trim();
+  const defaultShiftBreakMinutes = Number(defaultShiftBreakMinutesValue || "0");
   const hireDate = hireDateInput || new Date().toISOString().slice(0, 10);
 
   if (!employeeCode || !fullName || !jobTitle) {
     return { status: "error", message: "Employee code, name, and role are required." };
+  }
+
+  if (!defaultShiftLabel || !defaultShiftStartTime || !defaultShiftEndTime) {
+    return {
+      status: "error",
+      message: "Default shift name, start time, and end time are required.",
+    };
+  }
+
+  if (!Number.isInteger(defaultShiftBreakMinutes) || defaultShiftBreakMinutes < 0) {
+    return { status: "error", message: "Default shift break must be zero or greater." };
+  }
+
+  if (
+    getShiftHours(
+      defaultShiftStartTime,
+      defaultShiftEndTime,
+      defaultShiftBreakMinutes,
+    ) <= 0
+  ) {
+    return {
+      status: "error",
+      message: "Default shift end time must be later than start time.",
+    };
   }
 
   if (!isOneOf(payTypeOptions, payType)) {
@@ -125,7 +172,7 @@ export async function createEmployeeAction(
   const rate = toPositiveMoneyString(rateValue);
 
   if (!rate) {
-    return { status: "error", message: "Enter a valid hourly rate or monthly salary." };
+    return { status: "error", message: "Enter a valid daily rate or monthly salary." };
   }
 
   const paidLeaveQuota = toNonNegativeQuantityString(paidLeaveQuotaValue);
@@ -179,6 +226,10 @@ export async function createEmployeeAction(
     status: "active",
     hireDate,
     jobTitle,
+    defaultShiftLabel,
+    defaultShiftStartTime,
+    defaultShiftEndTime,
+    defaultShiftBreakMinutes,
     paidLeaveQuota,
     sickLeaveQuota,
   });
@@ -187,7 +238,7 @@ export async function createEmployeeAction(
     id: crypto.randomUUID(),
     employeeId,
     payType,
-    hourlyRate: payType === "hourly" ? rate : null,
+    hourlyRate: payType === "daily" ? rate : null,
     monthlySalary: payType === "monthly" ? rate : null,
     overtimeEligible,
     overtimeRateMode: !overtimeEligible
@@ -210,6 +261,218 @@ export async function createEmployeeAction(
   ]);
 
   return { status: "success", message: "Employee created." };
+}
+
+export async function saveAttendanceRosterAction(
+  _prevState: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  try {
+    const session = await requireAdminSession();
+
+    const workDate = String(formData.get("workDate") ?? "").trim();
+    const employeeIds = formData
+      .getAll("employeeId")
+      .map((value) => String(value).trim())
+      .filter(Boolean);
+    const statuses = formData.getAll("status").map((value) => String(value).trim());
+    const overtimeValues = formData.getAll("overtimeHours").map((value) => String(value).trim());
+    const remarksValues = formData.getAll("remarks").map((value) => String(value));
+
+    if (!workDate || !employeeIds.length) {
+      return { status: "error", message: "A work date and at least one employee are required." };
+    }
+
+    if (
+      statuses.length !== employeeIds.length ||
+      overtimeValues.length !== employeeIds.length ||
+      remarksValues.length !== employeeIds.length
+    ) {
+      return {
+        status: "error",
+        message: "The attendance sheet is incomplete. Refresh and try again.",
+      };
+    }
+
+    const employees = await db
+      .select({
+        id: employee.id,
+        defaultShiftLabel: employee.defaultShiftLabel,
+        defaultShiftStartTime: employee.defaultShiftStartTime,
+        defaultShiftEndTime: employee.defaultShiftEndTime,
+        defaultShiftBreakMinutes: employee.defaultShiftBreakMinutes,
+      })
+      .from(employee)
+      .where(inArray(employee.id, employeeIds));
+
+    const employeeById = new Map(employees.map((item) => [item.id, item]));
+
+    if (employeeById.size !== employeeIds.length) {
+      return { status: "error", message: "One or more employees could not be found." };
+    }
+
+    const existingEntries = await db
+      .select({
+        id: attendanceEntry.id,
+        employeeId: attendanceEntry.employeeId,
+      })
+      .from(attendanceEntry)
+      .where(
+        and(
+          eq(attendanceEntry.workDate, workDate),
+          eq(attendanceEntry.segmentIndex, 0),
+          inArray(attendanceEntry.employeeId, employeeIds),
+        ),
+      );
+
+    const existingEntryByEmployeeId = new Map(
+      existingEntries.map((item) => [item.employeeId, item]),
+    );
+
+    const attendanceUpdates = employeeIds.map((employeeId, index) => {
+      const status = statuses[index] ?? "";
+      const overtimeHours = Number(overtimeValues[index] || "0");
+      const remarks = optionalText(remarksValues[index] ?? null);
+      const currentEmployee = employeeById.get(employeeId);
+
+      if (!currentEmployee || !isOneOf(attendanceStatusOptions, status)) {
+        return { error: "One or more attendance rows have an invalid status." };
+      }
+
+      if (!Number.isFinite(overtimeHours) || overtimeHours < 0) {
+        return { error: "Overtime hours must be zero or greater." };
+      }
+
+      if (status !== "worked" && overtimeHours > 0) {
+        return { error: "Overtime can only be entered for worked days." };
+      }
+
+      const shiftHours = getShiftHours(
+        currentEmployee.defaultShiftStartTime,
+        currentEmployee.defaultShiftEndTime,
+        currentEmployee.defaultShiftBreakMinutes,
+      );
+
+      if (status === "worked" && shiftHours <= 0) {
+        return { error: "Every worked employee needs a valid default shift." };
+      }
+
+      const actualClockInAt =
+        status === "worked"
+          ? toDateTime(workDate, currentEmployee.defaultShiftStartTime)
+          : null;
+      const actualClockOutAt =
+        status === "worked"
+          ? toDateTime(workDate, currentEmployee.defaultShiftEndTime)
+          : null;
+
+      if (status === "worked" && (!actualClockInAt || !actualClockOutAt)) {
+        return {
+          error:
+            "One or more default shifts use an invalid time value. Update the employee shift first.",
+        };
+      }
+
+      return {
+        employeeId,
+        status,
+        remarks,
+        overtimeMinutes: Math.round(overtimeHours * 60),
+        attendanceEntryId: existingEntryByEmployeeId.get(employeeId)?.id ?? crypto.randomUUID(),
+        dbStatus: toDbAttendanceStatus(status),
+        shiftLabel: currentEmployee.defaultShiftLabel,
+        actualClockInAt,
+        actualClockOutAt,
+        breakMinutes: status === "worked" ? currentEmployee.defaultShiftBreakMinutes : 0,
+        isExisting: existingEntryByEmployeeId.has(employeeId),
+      };
+    });
+
+    const firstError = attendanceUpdates.find((item) => "error" in item);
+
+    if (firstError && "error" in firstError) {
+      return {
+        status: "error",
+        message: firstError.error ?? "Unable to save the day roster.",
+      };
+    }
+
+    const validUpdates = attendanceUpdates.filter(
+      (item): item is Exclude<(typeof attendanceUpdates)[number], { error: string }> =>
+        !("error" in item),
+    );
+
+    await db.transaction(async (tx) => {
+      for (const item of validUpdates) {
+        if (item.isExisting) {
+          await tx
+            .update(attendanceEntry)
+            .set({
+              actualClockInAt: item.actualClockInAt,
+              actualClockOutAt: item.actualClockOutAt,
+              breakMinutes: item.breakMinutes,
+              status: item.dbStatus,
+              approvalStatus: "approved",
+              source: "admin",
+              shiftLabel: item.shiftLabel,
+              remarks: item.remarks,
+              updatedAt: new Date(),
+            })
+            .where(eq(attendanceEntry.id, item.attendanceEntryId));
+        } else {
+          await tx.insert(attendanceEntry).values({
+            id: item.attendanceEntryId,
+            employeeId: item.employeeId,
+            workDate,
+            segmentIndex: 0,
+            shiftLabel: item.shiftLabel,
+            actualClockInAt: item.actualClockInAt,
+            actualClockOutAt: item.actualClockOutAt,
+            breakMinutes: item.breakMinutes,
+            status: item.dbStatus,
+            approvalStatus: "approved",
+            source: "admin",
+            remarks: item.remarks,
+            createdByUserId: session.user.id,
+          });
+        }
+
+        await tx.delete(overtimeEntry).where(eq(overtimeEntry.attendanceEntryId, item.attendanceEntryId));
+
+        if (item.overtimeMinutes > 0) {
+          await tx.insert(overtimeEntry).values({
+            id: crypto.randomUUID(),
+            employeeId: item.employeeId,
+            attendanceEntryId: item.attendanceEntryId,
+            workDate,
+            requestedMinutes: item.overtimeMinutes,
+            approvedMinutes: item.overtimeMinutes,
+            status: "approved",
+            remarks: item.remarks,
+          });
+        }
+      }
+    });
+
+    revalidateAdminPathSegments([
+      "/dashboard",
+      "/dashboard/attendance",
+      "/dashboard/employees",
+      "/dashboard/payroll",
+    ]);
+
+    return {
+      status: "success",
+      message: `Saved attendance for ${validUpdates.length} employee${validUpdates.length === 1 ? "" : "s"}.`,
+    };
+  } catch (error) {
+    console.error("Failed to save attendance roster", error);
+
+    return {
+      status: "error",
+      message: "Unable to save the day roster right now. Please try again.",
+    };
+  }
 }
 
 export async function toggleEmployeeStatusAction(
@@ -545,6 +808,9 @@ export async function calculatePayrollAction(
         status: employee.status,
         hireDate: employee.hireDate,
         endDate: employee.endDate,
+        defaultShiftStartTime: employee.defaultShiftStartTime,
+        defaultShiftEndTime: employee.defaultShiftEndTime,
+        defaultShiftBreakMinutes: employee.defaultShiftBreakMinutes,
       })
       .from(employee)
       .orderBy(employee.fullName),
@@ -552,7 +818,7 @@ export async function calculatePayrollAction(
       .select({
         employeeId: employeeCompensationHistory.employeeId,
         payType: employeeCompensationHistory.payType,
-        hourlyRate: employeeCompensationHistory.hourlyRate,
+        dailyRate: employeeCompensationHistory.hourlyRate,
         monthlySalary: employeeCompensationHistory.monthlySalary,
         overtimeEligible: employeeCompensationHistory.overtimeEligible,
         overtimeRateMode: employeeCompensationHistory.overtimeRateMode,
@@ -632,6 +898,12 @@ export async function calculatePayrollAction(
       0,
     );
     const overtimeHours = overtimeHoursByEmployee.get(currentEmployee.id) ?? 0;
+    const employeeShiftHours =
+      getShiftHours(
+        currentEmployee.defaultShiftStartTime,
+        currentEmployee.defaultShiftEndTime,
+        currentEmployee.defaultShiftBreakMinutes,
+      ) || standardHoursPerDay;
 
     let regularPay = 0;
     let paidLeavePay = 0;
@@ -639,17 +911,17 @@ export async function calculatePayrollAction(
     let holidayPay = 0;
     let deductionsTotal = 0;
 
-    if (compensation.payType === "hourly") {
-      const hourlyRate = Number(compensation.hourlyRate ?? "0");
-      regularPay = workedHours * hourlyRate;
+    if (compensation.payType === "daily") {
+      const dailyRate = Number(compensation.dailyRate ?? "0");
+      regularPay = attendanceSummary.worked * dailyRate;
       paidLeavePay = selectedPolicy.paidLeavePayable
-        ? attendanceSummary.paid_leave * standardHoursPerDay * hourlyRate
+        ? attendanceSummary.paid_leave * dailyRate
         : 0;
       sickLeavePay = selectedPolicy.sickLeavePayable
-        ? attendanceSummary.sick_leave * standardHoursPerDay * hourlyRate
+        ? attendanceSummary.sick_leave * dailyRate
         : 0;
       holidayPay = selectedPolicy.holidaysPaid
-        ? attendanceSummary.holiday * standardHoursPerDay * hourlyRate
+        ? attendanceSummary.holiday * dailyRate
         : 0;
     } else {
       const monthlySalary = Number(compensation.monthlySalary ?? "0");
@@ -667,8 +939,8 @@ export async function calculatePayrollAction(
         overtimePay = overtimeHours * Number(compensation.overtimeRate);
       } else {
         const baseHourlyRate =
-          compensation.payType === "hourly"
-            ? Number(compensation.hourlyRate ?? "0")
+          compensation.payType === "daily"
+            ? Number(compensation.dailyRate ?? "0") / employeeShiftHours
             : Number(compensation.monthlySalary ?? "0") / (periodDays * standardHoursPerDay);
         const multiplier = Number(
           compensation.overtimeMultiplier ?? selectedPolicy.overtimeMultiplierDefault,
@@ -682,10 +954,16 @@ export async function calculatePayrollAction(
       regularPay + paidLeavePay + sickLeavePay + holidayPay + overtimePay - deductionsTotal,
     );
     const payableHours =
-      workedHours +
-      (selectedPolicy.paidLeavePayable ? attendanceSummary.paid_leave * standardHoursPerDay : 0) +
-      (selectedPolicy.sickLeavePayable ? attendanceSummary.sick_leave * standardHoursPerDay : 0) +
-      (selectedPolicy.holidaysPaid ? attendanceSummary.holiday * standardHoursPerDay : 0);
+      compensation.payType === "daily"
+        ? (attendanceSummary.worked +
+            (selectedPolicy.paidLeavePayable ? attendanceSummary.paid_leave : 0) +
+            (selectedPolicy.sickLeavePayable ? attendanceSummary.sick_leave : 0) +
+            (selectedPolicy.holidaysPaid ? attendanceSummary.holiday : 0)) *
+          employeeShiftHours
+        : workedHours +
+          (selectedPolicy.paidLeavePayable ? attendanceSummary.paid_leave * standardHoursPerDay : 0) +
+          (selectedPolicy.sickLeavePayable ? attendanceSummary.sick_leave * standardHoursPerDay : 0) +
+          (selectedPolicy.holidaysPaid ? attendanceSummary.holiday * standardHoursPerDay : 0);
 
     resultRows.push({
       id: crypto.randomUUID(),

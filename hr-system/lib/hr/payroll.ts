@@ -2,8 +2,8 @@ import { fromDbAttendanceStatus, type UiAttendanceStatus } from "@/lib/hr/option
 
 export type CompensationRecord = {
   employeeId: string;
-  payType: "hourly" | "monthly";
-  hourlyRate: string | null;
+  payType: "daily" | "monthly";
+  dailyRate: string | null;
   monthlySalary: string | null;
   overtimeEligible: boolean;
   overtimeRateMode: "multiplier" | "flat_rate" | null;
@@ -21,6 +21,36 @@ export type AttendanceRecord = {
   actualClockOutAt: Date | null;
   breakMinutes: number;
 };
+
+export function getShiftHours(
+  startTime: string | null,
+  endTime: string | null,
+  breakMinutes: number,
+) {
+  if (!startTime || !endTime) {
+    return 0;
+  }
+
+  const [startHour, startMinute] = startTime.split(":").map(Number);
+  const [endHour, endMinute] = endTime.split(":").map(Number);
+
+  if (
+    !Number.isFinite(startHour) ||
+    !Number.isFinite(startMinute) ||
+    !Number.isFinite(endHour) ||
+    !Number.isFinite(endMinute)
+  ) {
+    return 0;
+  }
+
+  const totalMinutes = endHour * 60 + endMinute - (startHour * 60 + startMinute);
+
+  if (totalMinutes <= 0) {
+    return 0;
+  }
+
+  return Math.max(0, totalMinutes - breakMinutes) / 60;
+}
 
 export function buildCurrentCompensationMap(
   history: CompensationRecord[],

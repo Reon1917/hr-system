@@ -34,11 +34,11 @@ export default async function EmployeesPage({ searchParams }: EmployeesPageProps
               Staff records and pay setup
             </h1>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
-              Keep a simple employee roster with pay settings and leave quotas in one place.
+              Keep a simple employee roster with pay settings, default shifts, and leave quotas in one place.
             </p>
           </div>
           <Modal
-            description="Add a staff member with role, pay type, overtime settings, and leave quotas."
+            description="Add a staff member with role, daily or monthly pay, default shift, overtime settings, and leave quotas."
             title="Add employee"
             triggerLabel="Add employee"
           >
@@ -106,6 +106,7 @@ export default async function EmployeesPage({ searchParams }: EmployeesPageProps
               <tr>
                 <th className="px-6 py-3">Employee</th>
                 <th className="px-6 py-3">Pay</th>
+                <th className="px-6 py-3">Shift</th>
                 <th className="px-6 py-3">Leave quota</th>
                 <th className="px-6 py-3">Status</th>
                 <th className="px-6 py-3 text-right">Action</th>
@@ -128,10 +129,16 @@ export default async function EmployeesPage({ searchParams }: EmployeesPageProps
                     </td>
                     <td className="px-6 py-4 text-muted-foreground">
                       {item.currentCompensation
-                        ? item.currentCompensation.payType === "hourly"
-                          ? `Hourly · ${item.currentCompensation.hourlyRate}`
+                        ? item.currentCompensation.payType === "daily"
+                          ? `Daily · ${item.currentCompensation.dailyRate}`
                           : `Monthly · ${item.currentCompensation.monthlySalary}`
                         : "Not set"}
+                    </td>
+                    <td className="px-6 py-4 text-muted-foreground">
+                      <div>{item.defaultShiftLabel}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {item.defaultShiftStartTime} - {item.defaultShiftEndTime} · {item.defaultShiftBreakMinutes} min break
+                      </div>
                     </td>
                     <td className="px-6 py-4 text-muted-foreground">
                       <div>Paid: {item.leaveUsage.paidLeaveUsed} / {item.paidLeaveQuota}</div>
@@ -159,7 +166,7 @@ export default async function EmployeesPage({ searchParams }: EmployeesPageProps
                 ))
               ) : (
                 <tr>
-                  <td className="px-6 py-8 text-muted-foreground" colSpan={5}>
+                  <td className="px-6 py-8 text-muted-foreground" colSpan={6}>
                     No employees matched the current filters.
                   </td>
                 </tr>

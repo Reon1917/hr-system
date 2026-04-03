@@ -9,7 +9,7 @@ const featureCards = [
   },
   {
     label: "Simple payroll",
-    detail: "Monthly totals stay understandable for a small store team with hourly and monthly pay.",
+    detail: "Monthly totals stay understandable for a small store team with daily and monthly pay.",
   },
   {
     label: "Low overhead",

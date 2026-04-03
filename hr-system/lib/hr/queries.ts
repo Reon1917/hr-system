@@ -28,7 +28,6 @@ import {
   type CompensationRecord,
 } from "@/lib/hr/payroll";
 import {
-  attendanceStatusOptions,
   employeeStatusOptions,
   formatEnumLabel,
   fromDbAttendanceStatus,
@@ -42,8 +41,6 @@ type EmployeesFilters = {
 };
 
 type AttendanceFilters = {
-  employeeId?: string;
-  status?: string;
   workDate?: string;
 };
 
@@ -244,6 +241,10 @@ export async function getEmployeesPageData(filters: EmployeesFilters = {}) {
         hireDate: employee.hireDate,
         jobTitle: employee.jobTitle,
         phoneNumber: employee.phoneNumber,
+        defaultShiftLabel: employee.defaultShiftLabel,
+        defaultShiftStartTime: employee.defaultShiftStartTime,
+        defaultShiftEndTime: employee.defaultShiftEndTime,
+        defaultShiftBreakMinutes: employee.defaultShiftBreakMinutes,
         paidLeaveQuota: employee.paidLeaveQuota,
         sickLeaveQuota: employee.sickLeaveQuota,
       })
@@ -254,7 +255,7 @@ export async function getEmployeesPageData(filters: EmployeesFilters = {}) {
       .select({
         employeeId: employeeCompensationHistory.employeeId,
         payType: employeeCompensationHistory.payType,
-        hourlyRate: employeeCompensationHistory.hourlyRate,
+        dailyRate: employeeCompensationHistory.hourlyRate,
         monthlySalary: employeeCompensationHistory.monthlySalary,
         overtimeEligible: employeeCompensationHistory.overtimeEligible,
         overtimeRateMode: employeeCompensationHistory.overtimeRateMode,
@@ -293,23 +294,55 @@ export async function getEmployeesPageData(filters: EmployeesFilters = {}) {
 }
 
 export async function getAttendancePageData(filters: AttendanceFilters = {}) {
-  const employeeId = normalizeFilter(filters.employeeId);
-  const status = normalizeFilter(filters.status);
-  const workDate = normalizeFilter(filters.workDate);
-  const conditions: SQL[] = [];
+  const today = new Date().toISOString().slice(0, 10);
+  const workDate = normalizeFilter(filters.workDate) ?? today;
 
-  if (employeeId) {
-    conditions.push(eq(attendanceEntry.employeeId, employeeId));
-  }
-
-  if (workDate) {
-    conditions.push(eq(attendanceEntry.workDate, workDate));
-  }
-
-  const whereClause = conditions.length ? and(...conditions) : undefined;
-
-  const [employees, rawEntries] = await Promise.all([
-    getEmployeeOptions(),
+  const [employees, compensationHistory, rawEntries, recentEntries] = await Promise.all([
+    db
+      .select({
+        id: employee.id,
+        employeeCode: employee.employeeCode,
+        fullName: employee.fullName,
+        jobTitle: employee.jobTitle,
+        defaultShiftLabel: employee.defaultShiftLabel,
+        defaultShiftStartTime: employee.defaultShiftStartTime,
+        defaultShiftEndTime: employee.defaultShiftEndTime,
+        defaultShiftBreakMinutes: employee.defaultShiftBreakMinutes,
+      })
+      .from(employee)
+      .where(eq(employee.status, "active"))
+      .orderBy(employee.fullName),
+    db
+      .select({
+        employeeId: employeeCompensationHistory.employeeId,
+        payType: employeeCompensationHistory.payType,
+        dailyRate: employeeCompensationHistory.hourlyRate,
+        monthlySalary: employeeCompensationHistory.monthlySalary,
+        overtimeEligible: employeeCompensationHistory.overtimeEligible,
+        overtimeRateMode: employeeCompensationHistory.overtimeRateMode,
+        overtimeRate: employeeCompensationHistory.overtimeRate,
+        overtimeMultiplier: employeeCompensationHistory.overtimeMultiplier,
+        effectiveFrom: employeeCompensationHistory.effectiveFrom,
+      })
+      .from(employeeCompensationHistory)
+      .orderBy(
+        desc(employeeCompensationHistory.effectiveFrom),
+        desc(employeeCompensationHistory.createdAt),
+      ),
+    db
+      .select({
+        id: attendanceEntry.id,
+        employeeId: attendanceEntry.employeeId,
+        workDate: attendanceEntry.workDate,
+        status: attendanceEntry.status,
+        actualClockInAt: attendanceEntry.actualClockInAt,
+        actualClockOutAt: attendanceEntry.actualClockOutAt,
+        breakMinutes: attendanceEntry.breakMinutes,
+        remarks: attendanceEntry.remarks,
+      })
+      .from(attendanceEntry)
+      .where(and(eq(attendanceEntry.workDate, workDate), eq(attendanceEntry.segmentIndex, 0)))
+      .orderBy(attendanceEntry.updatedAt),
     db
       .select({
         id: attendanceEntry.id,
@@ -325,12 +358,12 @@ export async function getAttendancePageData(filters: AttendanceFilters = {}) {
       })
       .from(attendanceEntry)
       .innerJoin(employee, eq(attendanceEntry.employeeId, employee.id))
-      .where(whereClause)
       .orderBy(desc(attendanceEntry.workDate), desc(attendanceEntry.updatedAt))
-      .limit(40),
+      .limit(14),
   ]);
 
-  const entryIds = rawEntries.map((item) => item.id);
+  const currentCompensationByEmployee = getCurrentCompensationRows(compensationHistory, workDate);
+  const entryIds = [...rawEntries, ...recentEntries].map((item) => item.id);
   const overtimeRows = entryIds.length
     ? await db
         .select({
@@ -353,15 +386,35 @@ export async function getAttendancePageData(filters: AttendanceFilters = {}) {
     );
   }
 
-  const entries = rawEntries
-    .map((item) => ({
+  const entryByEmployeeId = new Map(rawEntries.map((item) => [item.employeeId, item]));
+
+  const rosterRows = employees.map((item) => {
+    const entry = entryByEmployeeId.get(item.id);
+    const compensation = currentCompensationByEmployee.get(item.id) ?? null;
+    const dailyRate = compensation?.dailyRate;
+    const monthlySalary = compensation?.monthlySalary;
+
+    return {
+      ...item,
+      payLabel: compensation
+        ? compensation.payType === "daily"
+          ? `Daily · ${dailyRate}`
+          : `Monthly · ${monthlySalary}`
+        : "Not set",
+      currentStatus: entry ? fromDbAttendanceStatus(entry.status) : "worked",
+      overtimeHours: entry ? overtimeByEntryId.get(entry.id) ?? 0 : 0,
+      remarks: entry?.remarks ?? "",
+      entryId: entry?.id ?? null,
+    };
+  });
+
+  const entries = recentEntries.map((item) => ({
       ...item,
       uiStatus: fromDbAttendanceStatus(item.status),
       overtimeHours: overtimeByEntryId.get(item.id) ?? 0,
-    }))
-    .filter((item) => !status || (isOneOf(attendanceStatusOptions, status) && item.uiStatus === status));
+    }));
 
-  return { employees, entries };
+  return { rosterDate: workDate, rosterRows, entries };
 }
 
 export async function getHolidayPageData() {

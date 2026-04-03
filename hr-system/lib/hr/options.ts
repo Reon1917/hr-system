@@ -1,6 +1,6 @@
 export const employeeStatusOptions = ["active", "inactive"] as const;
 
-export const payTypeOptions = ["hourly", "monthly"] as const;
+export const payTypeOptions = ["daily", "monthly"] as const;
 
 export const attendanceStatusOptions = [
   "worked",
@@ -66,4 +66,8 @@ export function normalizeEmployeeStatus(value: string) {
 
 export function formatEnumLabel(value: string) {
   return value.replaceAll("_", " ").replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+export function formatShiftSummary(startTime: string, endTime: string, breakMinutes: number) {
+  return `${startTime} - ${endTime} · ${breakMinutes} min break`;
 }

@@ -2,7 +2,7 @@
 -- WARNING: this clears existing app data for a fresh local/dev setup.
 --
 -- Admin login:
---   email: manager@baanjaistore.test
+--   email: linmyatphyo03@gmail.com
 --   password: CoffeeShopAdmin123!
 --
 -- Usage:
@@ -49,7 +49,7 @@ INSERT INTO "user" (
 ) VALUES (
   'seed-admin-baanjai',
   'Anan Kittisak',
-  'manager@baanjaistore.test',
+  'linmyatphyo03@gmail.com',
   TRUE,
   NULL,
   NOW(),
@@ -143,6 +143,10 @@ INSERT INTO "employee" (
   end_date,
   department_id,
   job_title,
+  default_shift_label,
+  default_shift_start_time,
+  default_shift_end_time,
+  default_shift_break_minutes,
   paid_leave_quota,
   sick_leave_quota,
   payment_notes,
@@ -154,13 +158,17 @@ INSERT INTO "employee" (
     'emp-anan-manager',
     'EMP-001',
     'Anan Kittisak',
-    'manager@baanjaistore.test',
+    'linmyatphyo03@gmail.com',
     '+66810000001',
     'active',
     '2024-01-10',
     NULL,
     NULL,
     'Manager',
+    'Manager shift',
+    '08:00',
+    '17:30',
+    60,
     '6.00',
     '6.00',
     NULL,
@@ -179,6 +187,10 @@ INSERT INTO "employee" (
     NULL,
     NULL,
     'Cashier',
+    'Morning cashier',
+    '06:30',
+    '15:00',
+    60,
     '6.00',
     '6.00',
     NULL,
@@ -197,6 +209,10 @@ INSERT INTO "employee" (
     NULL,
     NULL,
     'Cashier',
+    'Evening cashier',
+    '13:00',
+    '21:30',
+    60,
     '6.00',
     '6.00',
     NULL,
@@ -215,6 +231,10 @@ INSERT INTO "employee" (
     NULL,
     NULL,
     'Helper',
+    'Store helper',
+    '08:30',
+    '17:30',
+    60,
     '6.00',
     '6.00',
     NULL,
@@ -260,8 +280,8 @@ INSERT INTO "employee_compensation_history" (
   (
     'comp-mali-current',
     'emp-mali-cashier',
-    'hourly',
-    '60.00',
+    'daily',
+    '480.00',
     NULL,
     TRUE,
     'multiplier',
@@ -269,7 +289,7 @@ INSERT INTO "employee_compensation_history" (
     '1.50',
     '2026-01-01',
     NULL,
-    'Current hourly rate',
+    'Current daily rate',
     'seed-admin-baanjai',
     NOW(),
     NOW()
@@ -277,8 +297,8 @@ INSERT INTO "employee_compensation_history" (
   (
     'comp-pim-current',
     'emp-pim-cashier',
-    'hourly',
-    '62.00',
+    'daily',
+    '500.00',
     NULL,
     TRUE,
     'multiplier',
@@ -286,7 +306,7 @@ INSERT INTO "employee_compensation_history" (
     '1.50',
     '2026-01-01',
     NULL,
-    'Current hourly rate',
+    'Current daily rate',
     'seed-admin-baanjai',
     NOW(),
     NOW()
@@ -294,8 +314,8 @@ INSERT INTO "employee_compensation_history" (
   (
     'comp-vee-current',
     'emp-vee-helper',
-    'hourly',
-    '55.00',
+    'daily',
+    '420.00',
     NULL,
     TRUE,
     'multiplier',
@@ -303,7 +323,7 @@ INSERT INTO "employee_compensation_history" (
     '1.50',
     '2026-01-01',
     NULL,
-    'Current hourly rate',
+    'Current daily rate',
     'seed-admin-baanjai',
     NOW(),
     NOW()
